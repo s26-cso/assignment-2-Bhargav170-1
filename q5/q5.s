@@ -1,86 +1,96 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <dlfcn.h>
+.section .data
+filename:   .asciz "input.txt"
+yes_msg:    .asciz "Yes\n"
+no_msg:     .asciz "No\n"
 
-typedef struct
-{
-    char operation_name[10];
-    void *library_in_cache;
-    int (*func)(int, int); //function pointer :)
-} Cache;
+.section .bss
+left_char:  .skip 1
+right_char: .skip 1
 
-Cache cache[1];
-int cache_size = 0;
+.section .text
 
-int main()
-{
-    char operation_name[10];
-    int num1, num2;
+.globl _start
 
-    while (scanf("%s %d %d", operation_name, &num1, &num2) == 3)
-    {
 
-        // construct library name
-        char libname[20] = "./lib";   //it will reach a maximum of 15 characters (6 for lib 5 for operation_name 3 for .so and null treminator).
-        strcat(libname, operation_name);
-        strcat(libname, ".so");
+# important to access the end of file and then start two pointers to check for palindromes.
+_start:
+    la a0, filename
+    li a1, 0
+    li a7, 56
+    ecall
+    addi s0, a0, 0
 
-        int found = -1;
+    addi a0, s0, 0
+    li a1, 0
+    li a2, 2
+    li a7, 62
+    ecall
+    addi s1, a0, 0
 
-        for (int i = 0; i < cache_size; i++)
-        {
-            if (strcmp(cache[i].operation_name, operation_name) == 0)
-            {
-                found = i;
-                break;
-            }
-        }
+    li s2, 0
+    addi s3, s1, -1
 
-        if (found != -1)
-        {
-            int result = cache[found].func(num1, num2);
-            printf("%d\n", result);
-            continue;
-        }
-        if (cache_size == 1)
-        {
-            dlclose(cache[0].library_in_cache);
-            cache_size = 0;
-        }
+    jal ra, loop
 
-        // load library
-        void *library_in_cache = dlopen(libname, RTLD_LAZY);
+    #start the loop from starting and the endling location of the file.
 
-        //  get function pointer
-        int (*func)(int, int);
-        *(void **)(&func) = dlsym(library_in_cache, operation_name);
+loop:
+    bge s2, s3, palindrome_confimed
 
-        strcpy(cache[cache_size].operation_name, operation_name);
-        cache[cache_size].library_in_cache = library_in_cache;
-        cache[cache_size].func = func;
-        cache_size++;
+    addi a0, s0, 0
+    addi a1, s2, 0
+    li a2, 0
+    li a7, 62
+    ecall
 
-        //call function
-        int result = func(num1, num2);
+    addi a0, s0, 0
+    la a1, left_char
+    li a2, 1
+    li a7, 63
+    ecall
 
-        //print result
-        printf("%d\n", result);
-    }
+    addi a0, s0, 0
+    addi a1, s3, 0
+    li a2, 0
+    li a7, 62
+    ecall
 
-    //close library
-    for (int i = 0; i < cache_size; i++)
-    {
-        dlclose(cache[i].library_in_cache);
-    }
+    addi a0, s0, 0
+    la a1, right_char
+    li a2, 1
+    li a7, 63
+    ecall
 
-    // Initially, the cache was designed to hold multiple libraries simultaneously. However, due to memory constraints, it was modified to store only one library at a time. The structure still supports extending it back to a multi-cache system if constraints are relaxed.
-    // Caching of a single file have been used to avoid memory loss due to reopening a file multipple times, and at the same time maintain the memory limitt of 2GB. (2*1.5=3GB space will be taken up if cache sttores 2 open file at the same time).
-    
-    /*Control flow for the program: input-> check cache-> if found (use)-> loop continues-> close all.
-                                                                | Else
-                                                                V
-                                                            dlopen - dlsym - store in cache - use   */
+    la t0, left_char
+    lb t1, 0(t0)
 
-    return 0;
-}
+    la t0, right_char
+    lb t2, 0(t0)
+
+    bne t1, t2, not_palindrome
+
+    addi s2, s2, 1
+    addi s3, s3, -1
+    j loop
+
+
+not_palindrome:
+    li a0, 1
+    la a1, no_msg
+    li a2, 3
+    li a7, 64
+    ecall
+
+palindrome_confimed:
+    li a0, 1
+    la a1, yes_msg
+    li a2, 4
+    li a7, 64
+    ecall
+    j exit
+
+
+exit:
+    li a7, 93
+    li a0, 0
+    ecall
