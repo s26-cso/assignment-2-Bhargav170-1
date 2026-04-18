@@ -1,152 +1,164 @@
 .globl main
 
 .section .rodata
-fmt: .string "%d "      # format string for printing integers
-nl:  .string "\n"       # newline string
+fmt_d:  .string "%d"    # print an integer
+fmt_sp: .string " "     # space between elements
+fmt_nl: .string "\n"    # trailing newline
 
-.section .text
+# -----------------------------------------------------------------------
+# Q2 – Next Greater Element (position / 0-based index)
+#
+# For each element in argv[1..n], output the 0-based index of the first
+# element to its right that is strictly greater, or -1 if none exists.
+#
+# Algorithm: single right-to-left pass with a monotonic (decreasing) stack.
+# Time: O(n)   Space: O(n)
+#
+# Callee-saved register map (survive across malloc / atoi / printf calls):
+#   s0 = argv  (char**)
+#   s1 = arr   (int*, parsed values)
+#   s2 = stk   (int*, index stack)
+#   s3 = res   (int*, result array)
+#   s4 = n     (number of elements = argc-1)
+#   s5 = stk_top  (-1 means empty)
+#   s6 = loop variable i
+# -----------------------------------------------------------------------
 
 main:
-    addi sp, sp, -48
-    sd ra, 40(sp)
-    sd s0, 32(sp)   # save pointer to arr (input array)
-    sd s1, 24(sp)   # save pointer to stack (index stack)
-    sd s2, 16(sp)   # save pointer to result array (next greater indices)
-    sd s3, 8(sp)    # save n (number of elements)
+    addi sp, sp, -80
+    sd   ra, 72(sp)
+    sd   s0, 64(sp)
+    sd   s1, 56(sp)
+    sd   s2, 48(sp)
+    sd   s3, 40(sp)
+    sd   s4, 32(sp)
+    sd   s5, 24(sp)
+    sd   s6, 16(sp)
 
-    mv t0, a0          # argc (argument count)
-    mv t1, a1          # argv (argument vector)
+    # Save argv and n BEFORE any call clobbers a0/a1
+    mv   s0, a1             # s0 = argv (save immediately)
+    addi s4, a0, -1         # s4 = n = argc - 1
 
-    addi s3, t0, -1    # n = argc - 1 (ignore program name)
+    # Allocate arr[n]  (4 bytes per int)
+    slli a0, s4, 2
+    call malloc
+    mv   s1, a0             # s1 = arr
 
-    slli t2, s3, 2     # compute size in bytes (n * 4)
+    # Allocate stk[n]
+    slli a0, s4, 2
+    call malloc
+    mv   s2, a0             # s2 = stk
 
-    # allocate arr
-    mv a0, t2
-    call malloc        # allocate memory for input array
-    mv s0, a0
+    # Allocate res[n], then initialise every element to -1
+    slli a0, s4, 2
+    call malloc
+    mv   s3, a0             # s3 = res
 
-    # allocate stack
-    mv a0, t2
-    call malloc        # allocate memory for stack (stores indices)
-    mv s1, a0
+    li   s6, 0
+init_res:
+    bge  s6, s4, parse_args
+    slli t0, s6, 2
+    add  t0, s3, t0
+    li   t1, -1
+    sw   t1, 0(t0)          # res[s6] = -1
+    addi s6, s6, 1
+    j    init_res
 
-    # allocate result
-    mv a0, t2
-    call malloc        # allocate memory for result array
-    mv s2, a0
+    # --- Parse argv[1..n] into arr[] ---
+parse_args:
+    li   s6, 0              # s6 = index 0..n-1
+parse_loop:
+    bge  s6, s4, algo_start
+    addi t0, s6, 1          # argv index = s6 + 1
+    slli t0, t0, 3          # * 8 (pointer width)
+    add  t0, s0, t0
+    ld   a0, 0(t0)          # a0 = argv[s6+1]  (string)
+    call atoi               # a0 = integer
+    slli t0, s6, 2
+    add  t0, s1, t0
+    sw   a0, 0(t0)          # arr[s6] = integer
+    addi s6, s6, 1
+    j    parse_loop
 
-    # fill arr using atoi (convert input strings to integers)
-    li t3, 1           # argv index starts from 1
-    li t4, 0           # arr index starts from 0
+    # --- Monotonic stack pass (right to left) ---
+algo_start:
+    li   s5, -1             # s5 = stk_top  (-1 = empty)
+    addi s6, s4, -1         # s6 = i = n-1
 
-    # Traverse input arguments and store integers in arr
-fill_loop:
-    bge t3, t0, start_stack_insertion
-
-    slli t5, t3, 3
-    add t6, t1, t5
-    ld a0, 0(t6)
-    call atoi         # convert string to integer
-
-    slli t5, t4, 2
-    add t6, s0, t5
-    sw a0, 0(t6)      # store value in arr
-
-    addi t3, t3, 1
-    addi t4, t4, 1
-    j fill_loop
-
-# Use a monotonic stack to find next greater element index for each element
-start_stack_insertion:
-
-    addi t4, s3, -1    # start from last index (i = n-1)
-    li t5, -1          # initialize stack top = -1 (empty stack)
-
-# Main loop traversing array from right to left
 main_loop:
-    blt t4, zero, done
+    blt  s6, zero, print_start
 
-# Pop elements from stack while they are smaller than current element
-while_loop:
-    blt t5, zero, while_done
+    # Load arr[i] into t2
+    slli t0, s6, 2
+    add  t0, s1, t0
+    lw   t2, 0(t0)          # t2 = arr[i]
 
-    slli t6, t5, 2
-    add t7, s1, t6
-    lw t8, 0(t7)       # stack[top] (index)
+    # While stack not empty AND arr[stk[top]] <= arr[i]: pop
+pop_loop:
+    blt  s5, zero, pop_done     # stack empty
+    slli t0, s5, 2
+    add  t0, s2, t0
+    lw   t1, 0(t0)              # t1 = stk[top]  (an index)
+    slli t3, t1, 2
+    add  t3, s1, t3
+    lw   t3, 0(t3)              # t3 = arr[stk[top]]
+    bgt  t3, t2, pop_done       # strictly greater -> stop
+    addi s5, s5, -1             # pop
+    j    pop_loop
 
-    slli t9, t8, 2
-    add t10, s0, t9
-    lw t11, 0(t10)     #  access the element ar arr[stack[top]]
+pop_done:
+    # If stack not empty: res[i] = stk[top]
+    blt  s5, zero, do_push
+    slli t0, s5, 2
+    add  t0, s2, t0
+    lw   t1, 0(t0)              # t1 = stk[top]
+    slli t0, s6, 2
+    add  t0, s3, t0
+    sw   t1, 0(t0)              # res[i] = stk[top]
+    # (else res[i] stays -1)
 
-    slli t12, t4, 2
-    add t13, s0, t12
-    lw t14, 0(t13)     # arr[i]
+do_push:
+    # stk[++top] = i
+    addi s5, s5, 1
+    slli t0, s5, 2
+    add  t0, s2, t0
+    sw   s6, 0(t0)
 
-    ble t11, t14, pop_stack  # pop if stack element <= current
-    j while_done
+    addi s6, s6, -1         # i--
+    j    main_loop
 
-pop_stack:
-    addi t5, t5, -1    # decrement stack top
-    j while_loop
-
-while_done:
-
-    slli t6, t4, 2
-    add t7, s2, t6     # address of result[i]
-
-    blt t5, zero, no_greater  # if stack empty, no greater element
-
-    slli t8, t5, 2
-    add t9, s1, t8
-    lw t10, 0(t9)
-    sw t10, 0(t7)      # store index of next greater element
-    j push
-
-# If no greater element exists, store -1. (as given in the question)
-no_greater:
-    li t11, -1
-    sw t11, 0(t7)
-
-# Push current index onto stack
-push:
-    addi t5, t5, 1
-    slli t6, t5, 2
-    add t7, s1, t6
-    sw t4, 0(t7)       # push index i onto stack
-
-    addi t4, t4, -1    # move to previous element
-    j main_loop
-
-done:
-
-    li t4, 0
-
-# Print result array (indices of next greater elements)
+    # --- Print res[] space-separated with newline ---
+print_start:
+    li   s6, 0
 print_loop:
-    bge t4, s3, print_done
+    bge  s6, s4, print_done
 
-    slli t5, t4, 2
-    add t6, s2, t5
-    lw a1, 0(t6)
+    # Print space before every element except the first
+    beqz s6, skip_space
+    la   a0, fmt_sp
+    call printf
+skip_space:
+    slli t0, s6, 2
+    add  t0, s3, t0
+    lw   a1, 0(t0)          # value to print
+    la   a0, fmt_d
+    call printf             # printf("%d", res[s6])
 
-    la a0, fmt
-    call printf        # print each result element.
-
-    addi t4, t4, 1
-    j print_loop
+    addi s6, s6, 1
+    j    print_loop
 
 print_done:
-    la a0, nl
-    call printf        # print newline
+    la   a0, fmt_nl
+    call printf             # print newline
 
-    ld ra, 40(sp)
-    ld s0, 32(sp)
-    ld s1, 24(sp)
-    ld s2, 16(sp)
-    ld s3, 8(sp)
-
-    addi sp, sp, 48
-
-    li a0, 0
+    li   a0, 0
+    ld   ra, 72(sp)
+    ld   s0, 64(sp)
+    ld   s1, 56(sp)
+    ld   s2, 48(sp)
+    ld   s3, 40(sp)
+    ld   s4, 32(sp)
+    ld   s5, 24(sp)
+    ld   s6, 16(sp)
+    addi sp, sp, 80
     ret
