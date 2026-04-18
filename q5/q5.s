@@ -8,89 +8,115 @@ left_char:  .skip 1
 right_char: .skip 1
 
 .section .text
-
 .globl _start
 
+# Strategy: O(n) time, O(1) space palindrome check using two file seeks.
+# 1. Open the file.
+# 2. Use lseek(fd, 0, SEEK_END) to get file size.
+# 3. Use two pointers: left starting at offset 0, right starting at size-1.
+# 4. Each iteration: seek to left, read 1 byte; seek to right, read 1 byte.
+# 5. Compare bytes. If unequal -> "No". If left >= right -> "Yes".
+# Registers:
+#   s0 = file descriptor
+#   s1 = file size (total bytes)
+#   s2 = left pointer (byte offset from start)
+#   s3 = right pointer (byte offset from start)
 
-# important to access the end of file and then start two pointers to check for palindromes.
 _start:
-    la a0, filename
-    li a1, 0
-    li a7, 56
+    # open("input.txt", O_RDONLY=0)
+    la   a0, filename
+    li   a1, 0
+    li   a7, 56           # syscall: openat (use -1 for AT_FDCWD in a0 with openat)
+    # On RISC-V Linux, open() is syscall 56 (openat), needs AT_FDCWD in a0
+    li   a0, -100         # AT_FDCWD
+    la   a1, filename
+    li   a2, 0            # O_RDONLY
+    li   a3, 0            # mode (ignored for O_RDONLY)
+    li   a7, 56           # openat
     ecall
-    addi s0, a0, 0
+    mv   s0, a0           # s0 = fd
 
-    addi a0, s0, 0
-    li a1, 0
-    li a2, 2
-    li a7, 62
+    # lseek(fd, 0, SEEK_END=2) to get file size
+    mv   a0, s0
+    li   a1, 0
+    li   a2, 2            # SEEK_END
+    li   a7, 62           # lseek
     ecall
-    addi s1, a0, 0
+    mv   s1, a0           # s1 = file size
 
-    li s2, 0
-    addi s3, s1, -1
+    # Edge case: empty file is a palindrome
+    beqz s1, palindrome_confirmed
 
-    jal ra, loop
-
-    #start the loop from starting and the endling location of the file.
+    # Initialize two pointers
+    li   s2, 0            # left  = 0
+    addi s3, s1, -1       # right = size - 1
 
 loop:
-    bge s2, s3, palindrome_confimed
+    # If left >= right, all characters matched
+    bge  s2, s3, palindrome_confirmed
 
-    addi a0, s0, 0
-    addi a1, s2, 0
-    li a2, 0
-    li a7, 62
+    # Seek to left position and read 1 byte
+    mv   a0, s0
+    mv   a1, s2
+    li   a2, 0            # SEEK_SET
+    li   a7, 62           # lseek
     ecall
 
-    addi a0, s0, 0
-    la a1, left_char
-    li a2, 1
-    li a7, 63
+    mv   a0, s0
+    la   a1, left_char
+    li   a2, 1
+    li   a7, 63           # read
     ecall
 
-    addi a0, s0, 0
-    addi a1, s3, 0
-    li a2, 0
-    li a7, 62
+    # Seek to right position and read 1 byte
+    mv   a0, s0
+    mv   a1, s3
+    li   a2, 0            # SEEK_SET
+    li   a7, 62           # lseek
     ecall
 
-    addi a0, s0, 0
-    la a1, right_char
-    li a2, 1
-    li a7, 63
+    mv   a0, s0
+    la   a1, right_char
+    li   a2, 1
+    li   a7, 63           # read
     ecall
 
-    la t0, left_char
-    lb t1, 0(t0)
+    # Compare left_char and right_char
+    la   t0, left_char
+    lb   t1, 0(t0)
+    la   t0, right_char
+    lb   t2, 0(t0)
+    bne  t1, t2, not_palindrome
 
-    la t0, right_char
-    lb t2, 0(t0)
-
-    bne t1, t2, not_palindrome
-
+    # Advance pointers inward
     addi s2, s2, 1
     addi s3, s3, -1
-    j loop
-
+    j    loop
 
 not_palindrome:
-    li a0, 1
-    la a1, no_msg
-    li a2, 3
-    li a7, 64
+    # Print "No\n" (3 bytes) to stdout
+    li   a0, 1
+    la   a1, no_msg
+    li   a2, 3
+    li   a7, 64           # write
     ecall
+    j    exit             # <-- CRITICAL: must jump past palindrome_confirmed
 
-palindrome_confimed:
-    li a0, 1
-    la a1, yes_msg
-    li a2, 4
-    li a7, 64
+palindrome_confirmed:
+    # Print "Yes\n" (4 bytes) to stdout
+    li   a0, 1
+    la   a1, yes_msg
+    li   a2, 4
+    li   a7, 64           # write
     ecall
-    j exit
-
 
 exit:
-    li a7, 93
-    li a0, 0
+    # Close the file descriptor
+    mv   a0, s0
+    li   a7, 57           # close
+    ecall
+
+    # exit(0)
+    li   a7, 93
+    li   a0, 0
     ecall
