@@ -5,7 +5,24 @@ fmt_d:  .string "%d"    # print an integer
 fmt_sp: .string " "     # space between elements
 fmt_nl: .string "\n"    # trailing newline
 
-
+# -----------------------------------------------------------------------
+# Q2 – Next Greater Element (position / 0-based index)
+#
+# For each element in argv[1..n], output the 0-based index of the first
+# element to its right that is strictly greater, or -1 if none exists.
+#
+# Algorithm: single right-to-left pass with a monotonic (decreasing) stack.
+# Time: O(n)   Space: O(n)
+#
+# Callee-saved register map (survive across malloc / atoi / printf calls):
+#   s0 = argv  (char**)
+#   s1 = arr   (int*, parsed values)
+#   s2 = stk   (int*, index stack)
+#   s3 = res   (int*, result array)
+#   s4 = n     (number of elements = argc-1)
+#   s5 = stk_top  (-1 means empty)
+#   s6 = loop variable i
+# -----------------------------------------------------------------------
 
 main:
     addi sp, sp, -80
