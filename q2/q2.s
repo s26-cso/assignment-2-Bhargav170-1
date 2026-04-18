@@ -137,6 +137,12 @@ print_loop:
     beqz s6, skip_space
     la   a0, fmt_sp
     call printf
+
+
+
+
+    
+
 skip_space:
     slli t0, s6, 2
     add  t0, s3, t0
