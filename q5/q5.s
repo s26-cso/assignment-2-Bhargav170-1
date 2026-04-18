@@ -14,13 +14,6 @@ right_char: .skip 1
 # 1. Open the file.
 # 2. Use lseek(fd, 0, SEEK_END) to get file size.
 # 3. Use two pointers: left starting at offset 0, right starting at size-1.
-# 4. Each iteration: seek to left, read 1 byte; seek to right, read 1 byte.
-# 5. Compare bytes. If unequal -> "No". If left >= right -> "Yes".
-# Registers:
-#   s0 = file descriptor
-#   s1 = file size (total bytes)
-#   s2 = left pointer (byte offset from start)
-#   s3 = right pointer (byte offset from start)
 
 _start:
     # open("input.txt", O_RDONLY=0)
