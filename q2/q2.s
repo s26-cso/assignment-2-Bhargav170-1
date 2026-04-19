@@ -133,11 +133,11 @@ loop_while:
     jal  ra, top             
     slli t1, a0, 2
     add  t1, s1, t1
-    lw   t1, 0(t1)           
+    lw   t1, 0(t1)           # t1 = arr[top_index]
     slli t2, s4, 2
     add  t2, s1, t2
-    lw   t2, 0(t2)           
-    blt  t2, t1, found       # if arr[i] < arr[top], found NGE
+    lw   t2, 0(t2)           # t2 = arr[i]
+    blt  t1, t2, found       # FIX: if arr[top] < arr[i], arr[i] is the NGE
     jal  ra, pop
     jal  x0, loop_while
 noelem:
@@ -147,10 +147,13 @@ noelem:
     sw   t2, 0(t1)           
     jal  x0, push_i
 found:
-    jal  ra, top             # a0 = index of next greater element
+    jal  ra, top             # a0 = index of element needing NGE
     slli t1, s4, 2
     add  t1, s2, t1
-    sw   a0, 0(t1)           # Store the INDEX (a0) directly instead of the value
+    slli t2, s4, 2           # FIX: compute arr[i] — the actual NGE value
+    add  t2, s1, t2
+    lw   t2, 0(t2)
+    sw   t2, 0(t1)           # FIX: store arr[i] (the value), not the index
 push_i:
     add  a0, s4, x0
     jal  ra, push
