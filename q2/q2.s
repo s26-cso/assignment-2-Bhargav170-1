@@ -66,7 +66,7 @@ pop:
 
 top:
 1:  auipc t0, %pcrel_hi(head)
-addi  a0, a0, %pcrel_lo(1b)
+    addi  a0, a0, %pcrel_lo(1b)
 
     ld   t1, 0(t0)
     lw   a0, 0(t1)
