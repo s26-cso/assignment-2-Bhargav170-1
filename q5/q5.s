@@ -1,112 +1,96 @@
-.globl main
+.section .data
+file: .asciz "input.txt"
+Yes:  .asciz "Yes\n"
+No: .asciz "No\n"
 
-.section .rodata
-filename: .string "input.txt"
-yes_msg:  .string "Yes\n"
-no_msg:   .string "No\n"
-
-# -----------------------------------------------------------------------
-# Q5 – Palindrome check on an arbitrarily large file.
-# O(n) time, O(1) space.
-#
-# Method: two-pointer with lseek + read.
-# Compiled with: gcc q5.s -o q5  (libc, entry = main)
-#
-# Stack frame (80 bytes, 16-byte aligned):
-#   sp+ 0 : left_char  buffer (1 byte used, 8 bytes reserved)
-#   sp+ 8 : right_char buffer (1 byte used, 8 bytes reserved)
-#   sp+16 : padding
-#   sp+24 : saved s5
-#   sp+32 : saved s4
-#   sp+40 : saved s3  (right offset)
-#   sp+48 : saved s2  (left  offset)
-#   sp+56 : saved s1  (file size)
-#   sp+64 : saved s0  (fd)
-#   sp+72 : saved ra
-# -----------------------------------------------------------------------
-
+.bss
+buffer1: .space 1
+buffer2: .space 1
+.section .text
+.globl main 
 main:
-    addi sp, sp, -80
-    sd   ra, 72(sp)
-    sd   s0, 64(sp)
-    sd   s1, 56(sp)
-    sd   s2, 48(sp)
-    sd   s3, 40(sp)
-    sd   s4, 32(sp)
-    sd   s5, 24(sp)
-
-    # --- open("input.txt", O_RDONLY) ---
-    la   a0, filename
-    li   a1, 0              # O_RDONLY
-    call open
-    mv   s0, a0             # s0 = fd
-
-    # --- get file size: lseek(fd, 0, SEEK_END) ---
-    mv   a0, s0
-    li   a1, 0
-    li   a2, 2              # SEEK_END
-    call lseek
-    mv   s1, a0             # s1 = file size
-
-    beqz s1, is_palindrome  # empty file is trivially a palindrome
-
-    li   s2, 0              # left  pointer = byte offset 0
-    addi s3, s1, -1         # right pointer = byte offset (size - 1)
-
-loop:
-    bge  s2, s3, is_palindrome   # pointers met/crossed -> all matched
-
-    # --- seek to left offset, read 1 byte into sp+0 ---
-    mv   a0, s0
-    mv   a1, s2             # left offset
-    li   a2, 0              # SEEK_SET
-    call lseek
-
-    mv   a0, s0
-    addi a1, sp, 0          # buffer at sp+0
-    li   a2, 1
-    call read
-
-    # --- seek to right offset, read 1 byte into sp+8 ---
-    mv   a0, s0
-    mv   a1, s3             # right offset
-    li   a2, 0              # SEEK_SET
-    call lseek
-
-    mv   a0, s0
-    addi a1, sp, 8          # buffer at sp+8
-    li   a2, 1
-    call read
-
-    # --- compare using s4/s5 (callee-saved, safe across any future call) ---
-    lb   s4, 0(sp)          # left  char
-    lb   s5, 8(sp)          # right char
-    bne  s4, s5, not_palindrome
-
-    addi s2, s2, 1          # left++
-    addi s3, s3, -1         # right--
-    j    loop
-
-not_palindrome:
-    la   a0, no_msg
-    call printf
-    j    done
-
-is_palindrome:
-    la   a0, yes_msg
-    call printf
-
-done:
-    mv   a0, s0
-    call close
-
-    li   a0, 0
-    ld   ra, 72(sp)
-    ld   s0, 64(sp)
-    ld   s1, 56(sp)
-    ld   s2, 48(sp)
-    ld   s3, 40(sp)
-    ld   s4, 32(sp)
-    ld   s5, 24(sp)
-    addi sp, sp, 80
-    ret
+   addi sp, sp, -32 #saving the save registars because we need the orignal value in the end for program to actually work
+    sd s0, 24(sp)
+    sd s1, 16(sp)
+    sd s2, 8(sp)
+    sd s3, 0(sp)
+    addi a7, x0, 56   #to call openfile a7=56
+    addi a0, x0, -100  #a0=-100 means use the same directory
+1:  auipc a1, %pcrel_hi(file)       # %pcrel_hi gives upper 20 bits of PC-relative offset to file label, linker fills this at link time
+    addi  a1, a1, %pcrel_lo(1b)     # %pcrel_lo gives lower 12 bits using same target as auipc at label 1b, works across sections
+    addi a2, x0, 0 #a2 is flag 0 mean read only 1 mean write only 2 means read+write while 64 is create a file
+    addi a3, x0, 0 #file permission only required when creating a new file not used here
+    ecall
+    addi s0, a0, 0 #s0=a0=file descriptor fd 
+    addi a7, x0, 62 #a7=62 for fseek
+    addi a0, s0, 0 #a0= fd
+    addi a1, x0, 0 #a1= offset we do it 0 because we want to be exact end not move from end
+    addi a2, x0, 2   # a2=2 is SEEK_END that is from where we have to go to the location of offset 0 is begn and 1 is curr pos
+    ecall #now a0 has the new position which is last of the file
+    addi s1, a0, 0   #s1 has now the last file position ie n
+    addi s2, x0, 0 #s2=left=0 
+    addi s3, s1, -1 #s3=right=n-1
+    loop:
+      bge s2, s3, ypaln
+      addi a7, x0, 62 #lseek
+      addi a0, s0, 0 #fd
+      addi a1, s2, 0 #offset 
+      addi a2, x0, 0 #from start
+      ecall
+      addi a7, x0, 63 #a7=63 is read 
+      addi a0, s0, 0 #a0=fd
+2:    auipc a1, %pcrel_hi(buffer1)  
+      addi  a1, a1, %pcrel_lo(2b)  
+      addi a2, x0, 1 #a2 = number of bytes to read 
+      ecall 
+      addi a7, x0, 62
+      addi a0, s0, 0
+      addi a1, s3, 0 #just changed the offset to right from left all same so this will go to str[right]
+      addi a2, x0, 0
+      ecall
+      addi a7, x0, 63
+      addi a0, s0, 0
+3:    auipc a1, %pcrel_hi(buffer2)  
+      addi  a1, a1, %pcrel_lo(3b)   
+      addi a2, x0, 1
+     ecall
+4:   auipc t0, %pcrel_hi(buffer1)  
+     addi  t0, t0, %pcrel_lo(4b)    
+    lb t1, 0(t0)
+5:   auipc t0, %pcrel_hi(buffer2)  
+     addi  t0, t0, %pcrel_lo(5b)    
+    lb t2, 0(t0)
+    bne t1, t2, notpaln
+    addi s2, s2, 1 #l=l+1
+    addi s3, s3, -1 #r=r+1
+    beq x0, x0, loop
+    notpaln:
+      addi a7, x0, 64 #for print a7=64
+    addi a0, x0, 1 #its fd here 1 is stdout 0 is stdin and 2 is stdout we can use other fd also to write i other file
+6:  auipc a1, %pcrel_hi(No)       
+    addi  a1, a1, %pcrel_lo(6b)     
+    addi a2, x0, 3 #a2- no. of bytes here 3
+    ecall
+     beq x0, x0, end
+     ypaln:
+       addi a7, x0, 64
+    addi a0, x0, 1
+7:  auipc a1, %pcrel_hi(Yes)        
+    addi  a1, a1, %pcrel_lo(7b)     
+    addi a2, x0, 4
+    ecall
+    end:
+   
+    addi a7, x0, 57
+    addi a0, s0, 0
+    ecall #close the file it need a8=57 and a0=fd
+    # restore registers and stack
+   ld s0, 24(sp)
+ld s1, 16(sp)
+ld s2,  8(sp)
+ld s3,  0(sp)
+addi sp, sp, 32
+   
+    addi a7, x0, 93
+    addi a0, x0, 0
+    ecall #exit call a7=93 and a0=0
