@@ -165,7 +165,7 @@ no_space:
 
 exit_print:
 1:  auipc a0, %pcrel_hi(newline)
-    
+    addi  a0, a0, %pcrel_lo(1b)
     jal  ra, printf
 
     add  a0, s1, x0
