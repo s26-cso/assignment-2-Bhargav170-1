@@ -9,7 +9,7 @@ buffer2: .space 1
 .section .text
 .globl main 
 main:
-   addi sp, sp, -32 #saving the save registars because we need the orignal value in the end for program to actually work
+    addi sp, sp, -32 #saving the save registars because we need the orignal value in the end for program to actually work
     sd s0, 24(sp)
     sd s1, 16(sp)
     sd s2, 8(sp)
