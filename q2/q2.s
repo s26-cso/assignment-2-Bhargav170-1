@@ -1,170 +1,198 @@
-.globl main
-
 .section .rodata
-fmt_d:  .string "%d"    # print an integer
-fmt_sp: .string " "     # space between elements
-fmt_nl: .string "\n"    # trailing newline
+fmt:      .string "%ld"
+fmt_last: .string "%ld"
+fmt_space:  .string " "
+newline:    .string "\n"
 
-# -----------------------------------------------------------------------
-# Q2 – Next Greater Element (position / 0-based index)
-#
-# For each element in argv[1..n], output the 0-based index of the first
-# element to its right that is strictly greater, or -1 if none exists.
-#
-# Algorithm: single right-to-left pass with a monotonic (decreasing) stack.
-# Time: O(n)   Space: O(n)
-#
-# Callee-saved register map (survive across malloc / atoi / printf calls):
-#   s0 = argv  (char**)
-#   s1 = arr   (int*, parsed values)
-#   s2 = stk   (int*, index stack)
-#   s3 = res   (int*, result array)
-#   s4 = n     (number of elements = argc-1)
-#   s5 = stk_top  (-1 means empty)
-#   s6 = loop variable i
-# -----------------------------------------------------------------------
+.section .data
+.balign 8
+head: .dword 0
+
+.section .text
+.globl main
+.extern printf
+.extern malloc
+.extern free
+
+string_to_int:
+    add  t0, x0, x0
+    add  t3, x0, x0
+    lb   t1, 0(a0)
+    addi t2, x0, 45
+    bne  t1, t2, stoi_loop
+    addi t3, x0, 1
+    addi a0, a0, 1
+stoi_loop:
+    lb   t1, 0(a0)
+    beq  t1, x0, stoi_end
+    addi t1, t1, -48
+    addi t2, x0, 10
+    mul  t0, t0, t2
+    add  t0, t0, t1
+    addi a0, a0, 1
+    jal  x0, stoi_loop
+stoi_end:
+    beq  t3, x0, stoi_ret
+    sub  t0, x0, t0
+stoi_ret:
+    add  a0, t0, x0
+    jalr x0, ra, 0
+
+push:
+    add  t2, a0, x0
+    addi sp, sp, -16
+    sd   ra, 8(sp)
+    sd   t2, 0(sp)
+    addi a0, x0, 16
+    call malloc
+    add  t0, a0, x0
+    ld   ra, 8(sp)
+    ld   t2, 0(sp)
+    addi sp, sp, 16
+    sw   t2, 0(t0)
+1:  auipc t1, %pcrel_hi(head)
+    ld   t2, %pcrel_lo(1b)(t1)
+    sd   t2, 8(t0)
+    sd   t0, %pcrel_lo(1b)(t1)
+    jalr x0, ra, 0
+
+pop:
+1:  auipc t0, %pcrel_hi(head)
+    addi  t0, t0, %pcrel_lo(1b)
+    ld   t1, 0(t0)
+    ld   t2, 8(t1)
+    sd   t2, 0(t0)
+    jalr x0, ra, 0
+
+top:
+1:  auipc t0, %pcrel_hi(head)
+    addi  t0, t0, %pcrel_lo(1b)
+    ld   t1, 0(t0)
+    lw   a0, 0(t1)
+    jalr x0, ra, 0
 
 main:
-    addi sp, sp, -80
-    sd   ra, 72(sp)
-    sd   s0, 64(sp)
-    sd   s1, 56(sp)
-    sd   s2, 48(sp)
-    sd   s3, 40(sp)
-    sd   s4, 32(sp)
-    sd   s5, 24(sp)
-    sd   s6, 16(sp)
+    addi sp, sp, -64
+    sd   ra, 56(sp)
+    sd   s0, 48(sp)
+    sd   s1, 40(sp)
+    sd   s2, 32(sp)
+    sd   s3, 24(sp)
+    sd   s4, 16(sp)
 
-    # Save argv and n BEFORE any call clobbers a0/a1
-    mv   s0, a1             # s0 = argv (save immediately)
-    addi s4, a0, -1         # s4 = n = argc - 1
+    addi s0, a0, -1
+    add  s3, a1, x0
+    beq  s0, x0, exit
 
-    # Allocate arr[n]  (4 bytes per int)
-    slli a0, s4, 2
+    slli a0, s0, 3
     call malloc
-    mv   s1, a0             # s1 = arr
+    add  s1, a0, x0
 
-    # Allocate stk[n]
-    slli a0, s4, 2
+    slli a0, s0, 3
     call malloc
-    mv   s2, a0             # s2 = stk
+    add  s2, a0, x0
 
-    # Allocate res[n], then initialise every element to -1
-    slli a0, s4, 2
-    call malloc
-    mv   s3, a0             # s3 = res
+1:  auipc t0, %pcrel_hi(head)
+    sd   x0, %pcrel_lo(1b)(t0)
 
-    li   s6, 0
-init_res:
-    bge  s6, s4, parse_args
-    slli t0, s6, 2
-    add  t0, s3, t0
-    li   t1, -1
-    sw   t1, 0(t0)          # res[s6] = -1
-    addi s6, s6, 1
-    j    init_res
+    addi s4, x0, 1
+argtoint:
+    blt  s0, s4, nge
+    slli t1, s4, 3
+    add  t1, s3, t1
+    ld   a0, 0(t1)
+    jal  ra, string_to_int
+    addi t1, s4, -1
+    slli t1, t1, 3
+    add  t1, s1, t1
+    sd   a0, 0(t1)
+    addi s4, s4, 1
+    jal  x0, argtoint
 
-    # --- Parse argv[1..n] into arr[] ---
-parse_args:
-    li   s6, 0              # s6 = index 0..n-1
-parse_loop:
-    bge  s6, s4, algo_start
-    addi t0, s6, 1          # argv index = s6 + 1
-    slli t0, t0, 3          # * 8 (pointer width)
-    add  t0, s0, t0
-    ld   a0, 0(t0)          # a0 = argv[s6+1]  (string)
-    call atoi               # a0 = integer
-    slli t0, s6, 2
-    add  t0, s1, t0
-    sw   a0, 0(t0)          # arr[s6] = integer
-    addi s6, s6, 1
-    j    parse_loop
+nge:
+    addi s4, s0, -1
+loop_main:
+    blt  s4, x0, print
+loop_while:
+1:  auipc t0, %pcrel_hi(head)
+    addi  t0, t0, %pcrel_lo(1b)
+    ld   t1, 0(t0)
+    beq  t1, x0, noelem
+    jal  ra, top
+    slli t1, a0, 3
+    add  t1, s1, t1
+    ld   t1, 0(t1)
+    slli t2, s4, 3
+    add  t2, s1, t2
+    ld   t2, 0(t2)
+    blt  t2, t1, found
+    jal  ra, pop
+    jal  x0, loop_while
+noelem:
+    slli t1, s4, 3
+    add  t1, s2, t1
+    addi t2, x0, -1
+    sd   t2, 0(t1)
+    jal  x0, push_i
+found:
+    jal  ra, top
+    slli t1, s4, 3
+    add  t1, s2, t1
+    sd   a0, 0(t1)
+push_i:
+    add  a0, s4, x0
+    jal  ra, push
+    addi s4, s4, -1
+    jal  x0, loop_main
 
-    # --- Monotonic stack pass (right to left) ---
-algo_start:
-    li   s5, -1             # s5 = stk_top  (-1 = empty)
-    addi s6, s4, -1         # s6 = i = n-1
-
-main_loop:
-    blt  s6, zero, print_start
-
-    # Load arr[i] into t2
-    slli t0, s6, 2
-    add  t0, s1, t0
-    lw   t2, 0(t0)          # t2 = arr[i]
-
-    # While stack not empty AND arr[stk[top]] <= arr[i]: pop
-pop_loop:
-    blt  s5, zero, pop_done     # stack empty
-    slli t0, s5, 2
-    add  t0, s2, t0
-    lw   t1, 0(t0)              # t1 = stk[top]  (an index)
-    slli t3, t1, 2
-    add  t3, s1, t3
-    lw   t3, 0(t3)              # t3 = arr[stk[top]]
-    bgt  t3, t2, pop_done       # strictly greater -> stop
-    addi s5, s5, -1             # pop
-    j    pop_loop
-
-pop_done:
-    # If stack not empty: res[i] = stk[top]
-    blt  s5, zero, do_push
-    slli t0, s5, 2
-    add  t0, s2, t0
-    lw   t1, 0(t0)              # t1 = stk[top]
-    slli t0, s6, 2
-    add  t0, s3, t0
-    sw   t1, 0(t0)              # res[i] = stk[top]
-    # (else res[i] stays -1)
-
-do_push:
-    # stk[++top] = i
-    addi s5, s5, 1
-    slli t0, s5, 2
-    add  t0, s2, t0
-    sw   s6, 0(t0)
-
-    addi s6, s6, -1         # i--
-    j    main_loop
-
-    # --- Print res[] space-separated with newline ---
-print_start:
-    li   s6, 0
+print:
+    add  s4, x0, x0
 print_loop:
-    bge  s6, s4, print_done
+    bge  s4, s0, exit_print
+    beq  s4, x0, no_space
+1:  auipc a0, %pcrel_hi(fmt_space)
+    addi  a0, a0, %pcrel_lo(1b)
+    jal  ra, printf
+no_space:
+    slli t0, s4, 3
+    add  t0, s2, t0
+    ld   a1, 0(t0)
+1:  auipc a0, %pcrel_hi(fmt)
+    addi  a0, a0, %pcrel_lo(1b)
+    jal  ra, printf
+    addi s4, s4, 1
+    jal  x0, print_loop
 
-    # Print space before every element except the first
-    beqz s6, skip_space
-    la   a0, fmt_sp
-    call printf
+exit_print:
+1:  auipc a0, %pcrel_hi(newline)
+    addi  a0, a0, %pcrel_lo(1b)
+    jal  ra, printf
 
+    add  a0, s1, x0
+    jal  ra, free
+    add  a0, s2, x0
+    jal  ra, free
 
+    ld   ra, 56(sp)
+    ld   s0, 48(sp)
+    ld   s1, 40(sp)
+    ld   s2, 32(sp)
+    ld   s3, 24(sp)
+    ld   s4, 16(sp)
+    addi sp, sp, 64
+    add  a0, x0, x0
+    jalr x0, ra, 0
 
-
-    
-
-skip_space:
-    slli t0, s6, 2
-    add  t0, s3, t0
-    lw   a1, 0(t0)          # value to print
-    la   a0, fmt_d
-    call printf             # printf("%d", res[s6])
-
-    addi s6, s6, 1
-    j    print_loop
-
-print_done:
-    la   a0, fmt_nl
-    call printf             # print newline
-
-    li   a0, 0
-    ld   ra, 72(sp)
-    ld   s0, 64(sp)
-    ld   s1, 56(sp)
-    ld   s2, 48(sp)
-    ld   s3, 40(sp)
-    ld   s4, 32(sp)
-    ld   s5, 24(sp)
-    ld   s6, 16(sp)
-    addi sp, sp, 80
-    ret
+exit:
+1:  auipc a0, %pcrel_hi(newline)
+    addi  a0, a0, %pcrel_lo(1b)
+    jal  ra, printf
+    ld   ra, 56(sp)
+    ld   s0, 48(sp)
+    ld   s1, 40(sp)
+    ld   s2, 32(sp)
+    ld   s3, 24(sp)
+    ld   s4, 16(sp)
+    addi sp, sp, 64
+    add  a0, x0, x0
+    jalr x0, ra, 0
